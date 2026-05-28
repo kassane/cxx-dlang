@@ -1,54 +1,59 @@
-//! cxx bridge definitions for the cxx-dlang crate.
+//! cxx bridge — FFI boundary between Rust and D.
+//!
+//! `extern "Rust"` items are implemented below and callable from D.
+//! `unsafe extern "C++"` items are implemented in `d/cxx_d.d` and callable from Rust.
 
 #[cxx::bridge(namespace = "cxx_d")]
 pub mod bridge {
-    /// Shared POD struct — same layout on both Rust and D sides.
-    /// D: `extern(C++, "cxx_d") struct Greeting`
+    /// Shared POD struct with identical layout on both sides.
+    /// D mirror: `extern(C++, "cxx_d") struct Greeting`
     pub struct Greeting {
         pub name: String,
         pub count: i32,
     }
 
-    // -------- Rust exposes to D --------
     extern "Rust" {
-        /// Opaque Rust handle; D sees it as a reference-type via extern(C++, class)
+        /// Opaque Rust value; D holds it as a reference-sized pointer.
         type RustHandle;
 
+        /// Returns a greeting string — panics are caught by `prevent_unwind`.
         fn rust_greet(name: &str) -> String;
+        /// Allocates a `RustHandle` on the Rust heap; D receives a `Box<RustHandle>`.
         fn make_handle() -> Box<RustHandle>;
+        /// Describes a `RustHandle` without consuming it.
         fn handle_describe(handle: &RustHandle) -> String;
     }
 
-    // -------- D exposes to Rust --------
     unsafe extern "C++" {
         include!("cxx-dlang/include/cxx_d.h");
 
-        /// Opaque D handle — D class compiled by LDC2
+        /// Opaque D object; Rust holds it via `UniquePtr` (C++-heap-allocated).
         type DHandle;
 
+        /// Returns `x * 2` — implemented in `d/cxx_d.d`.
         fn d_double(x: i32) -> i32;
+        /// Allocates a `DHandle` on the C++ heap and returns ownership to Rust.
         fn d_make_handle() -> UniquePtr<DHandle>;
+        /// Passes a Rust fn pointer to D; D invokes it and returns the result.
         fn d_run_callback(cb: fn(&str) -> String, input: &str) -> String;
-
-        // parity: cxx test_c_return bool
+        /// Identity: returns `x` unchanged.
         fn d_identity_bool(x: bool) -> bool;
-        // parity: cxx test_c_take f64
+        /// Returns `a + b`.
         fn d_add_f64(a: f64, b: f64) -> f64;
-        // parity: cxx test_c_take &str — D reads rust::Str.len
+        /// Returns the byte length of `s` as seen by D (`rust::Str.len`).
         fn d_str_len(s: &str) -> usize;
-        // parity: cxx test_c_method_calls — D reads a shared struct field
+        /// Returns `g.count` via a D const-ref parameter.
         fn d_greeting_count(g: &Greeting) -> i32;
     }
 }
 
-// -------- Rust implementations exposed to D --------
-
+/// Opaque handle allocated and owned by Rust.
 pub struct RustHandle {
     value: String,
 }
 
 pub fn rust_greet(name: &str) -> String {
-    cxx::private::prevent_unwind("rust_greet", || format!("Hello, {}! (count=1)", name))
+    cxx::private::prevent_unwind("rust_greet", || format!("Hello, {name}! (count=1)"))
 }
 
 pub fn make_handle() -> Box<RustHandle> {

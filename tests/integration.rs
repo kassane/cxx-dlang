@@ -33,7 +33,10 @@ fn test_rust_handle_roundtrip() {
 fn test_d_make_handle() {
     // UniquePtr<DHandle> constructed on the D side — must not be null
     let handle = bridge::d_make_handle();
-    assert!(!handle.is_null(), "d_make_handle must return a live pointer");
+    assert!(
+        !handle.is_null(),
+        "d_make_handle must return a live pointer"
+    );
 }
 
 #[test]

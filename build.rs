@@ -152,9 +152,8 @@ fn find_ldc2_lib_dir(ldc2_root: &Path) -> PathBuf {
     //   5. any <root>/lib*/                          — generic scan
 
     // Accept both .a (MinGW / Linux / macOS) and .lib (MSVC Windows)
-    let probe = |p: &PathBuf| {
-        p.join("libdruntime-ldc.a").exists() || p.join("druntime-ldc.lib").exists()
-    };
+    let probe =
+        |p: &PathBuf| p.join("libdruntime-ldc.a").exists() || p.join("druntime-ldc.lib").exists();
 
     let base = ldc2_root.join("lib");
     if probe(&base) {
@@ -162,7 +161,11 @@ fn find_ldc2_lib_dir(ldc2_root: &Path) -> PathBuf {
     }
 
     // macOS universal: lib-arm64 / lib-x86_64
-    let arch = if cfg!(target_arch = "aarch64") { "lib-arm64" } else { "lib-x86_64" };
+    let arch = if cfg!(target_arch = "aarch64") {
+        "lib-arm64"
+    } else {
+        "lib-x86_64"
+    };
     let arch_dir = ldc2_root.join(arch);
     if probe(&arch_dir) {
         return arch_dir;
@@ -237,7 +240,9 @@ fn find_ldc2() -> PathBuf {
         }
     }
 
-    panic!("ldc2 not found; set LDC2_PATH env var or install LDC2 >= 1.40 via https://dlang.org/download.html");
+    panic!(
+        "ldc2 not found; set LDC2_PATH env var or install LDC2 >= 1.40 via https://dlang.org/download.html"
+    );
 }
 
 fn collect_d_sources(dir: &str) -> Vec<PathBuf> {

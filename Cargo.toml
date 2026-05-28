@@ -7,6 +7,9 @@ license = "MIT OR Apache-2.0"
 description = "Bidirectional Rust ↔ D (LDC2) FFI via cxx.rs and the C++ ABI"
 keywords = ["ffi", "dlang", "ldc2", "cxx", "bindings"]
 categories = ["development-tools::ffi", "api-bindings", "external-ffi-bindings"]
+repository = "https://github.com/kassane/cxx-dlang"
+homepage = "https://github.com/kassane/cxx-dlang"
+documentation = "https://docs.rs/cxx-dlang"
 exclude = ["/target", "/.github", "/tools"]
 links = "cxx_d_dlib"
 

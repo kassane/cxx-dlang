@@ -1,52 +1,53 @@
 /**
- * D-side mirror of the cxx_d bridge types.
+ * D-side mirror of the cxx_d bridge.
  *
- * IMPORTANT: All extern(C++) functions callable from Rust MUST be nothrow.
- * Exceptions MUST NOT cross the C++ ABI boundary.
- *
- * Struct layout: D structs == C++ structs (by value).
- * D classes == C++ classes (by reference) — use extern(C++, class) struct.
+ * All `extern(C++)` functions callable from Rust MUST be `nothrow` — exceptions
+ * must not cross the C++ ABI boundary (UB). Rust-side panics are guarded by
+ * `cxx::prevent_unwind` in src/ffi.rs.
  */
 module cxx_d;
 
 import core.stdc.stdint : uintptr_t;
 import core.attribute : mustuse;
 import ldc.attributes : assumeUsed;
-import core.stdcpp.new_ : __cpp_new_nothrow; // nothrow C++ operator new — compatible with delete
+import core.stdcpp.new_ : __cpp_new_nothrow;
 
-// Minimal unique_ptr — value type (NOT extern(C++, class)) so T* _ptr is a raw pointer.
-// core.stdcpp.memory is unavailable (pulls in core.stdcpp.tuple which is absent).
-// Two-parameter form matches std::unique_ptr<T, default_delete<T>>: required so that
-// MSVC-decorated return-type symbols include the full template instantiation.
-// The empty extern(C++) destructor makes this non-trivially destructible → sret on all ABIs.
+// ---------------------------------------------------------------------------
+// std:: types
+// ---------------------------------------------------------------------------
+
+/// Stateless deleter for std::unique_ptr — needed so the two-parameter template
+/// encodes correctly in MSVC-decorated return-type symbols.
 extern(C++, "std") struct default_delete(T) {}
 
+/// Minimal std::unique_ptr binding (value type, NOT extern(C++,class)).
+/// Two-parameter form matches std::unique_ptr<T, default_delete<T>> on all ABIs.
+/// Empty destructor makes it non-trivially destructible → sret return on all platforms.
+/// core.stdcpp.memory is unavailable (depends on core.stdcpp.tuple, absent in LDC 1.42).
 extern(C++, "std") struct unique_ptr(T, D = default_delete!T) {
     T* _ptr;
     extern(C++) ~this() nothrow @nogc {}
 }
 
-// rust::Str / rust::String / rust::Fn / rust::Vec live in the inline namespace
-// rust::cxxbridge1 — the linker uses the full cxxbridge1-qualified mangled name.
-// D must mirror this with extern(C++, "rust", "cxxbridge1") so symbol names match.
+// ---------------------------------------------------------------------------
+// rust:: types  (inline namespace rust::cxxbridge1 → use two-level namespace)
+// ---------------------------------------------------------------------------
 
-// rust::Str — borrowed UTF-8 slice from Rust (16B: ptr + len, SysV register-passable)
+/// rust::Str — borrowed UTF-8 slice (16B: ptr + len, register-passable on x86_64).
 extern(C++, "rust", "cxxbridge1") extern(C++, class) struct Str {
     const(char)* ptr;
     size_t len;
 }
 
-// rust::String — owned UTF-8 string from Rust (24B: std::array<uintptr_t, 3>)
-// Never construct directly; use cxx helper functions only.
+/// rust::String — owned UTF-8 string (24B: opaque uintptr_t[3]). Never construct directly.
 extern(C++, "rust", "cxxbridge1") extern(C++, class) struct String {
-    // opaque 24-byte repr — do not access fields
     private uintptr_t[3] repr;
 }
 
-// rust::Fn<Ret(Args...)> — 16-byte value struct: (trampoline ptr + context void*)
-// Layout from cxx/include/cxx.h:416: { Ret(*trampoline)(Args..., void* fn); void* fn; }
-// Use extern(C++) struct (NOT extern(C++, class)) for by-value semantics (16B on x86_64).
-// Call by invoking: cb.trampoline(args..., cb.fn_);
+/// rust::Fn<Ret(Args...)> — 16B value struct {trampoline, fn_}.
+/// D TMP encodes this as a pack (J..E); cxx uses a function type (F..E).
+/// Call via: cb.trampoline(args..., cb.fn_).
+/// Functions using this type require pragma(mangle) to fix the symbol (see below).
 extern(C++, "rust", "cxxbridge1") {
     extern(C++) struct Fn(Ret, Args...) {
         Ret function(Args, void*) nothrow trampoline;
@@ -55,67 +56,52 @@ extern(C++, "rust", "cxxbridge1") {
     alias StringFromStr = Fn!(String, Str);
 }
 
-// rust::Vec<T> template binding.
-// Pattern: D's extern(C++, class) struct Name(T) auto-mangles to the matching
-// Itanium template-instantiation symbol (verified: tmpffi.sh, 5-toolchain, 0 undefined syms).
-// C++ must explicitly instantiate (e.g. `template class rust::Vec<int>;`) — cxx.rs
-// does this automatically for every Vec<T> that appears in a bridge block.
-// @disable this() / this(this): rust::Vec<T> is exclusively owned and managed by Rust;
-// D must never construct or copy one directly.
+/// rust::Vec<T> — Rust-owned vector. D must never construct or copy one.
 extern(C++, "rust", "cxxbridge1") {
     extern(C++, class) struct Vec(T) {
         @disable this();
         @disable this(this);
     }
     alias VecI32    = Vec!int;
-    alias VecString = Vec!String;  // rust::Vec<rust::String>
+    alias VecString = Vec!String;
 }
 
-// Fallback via pragma(mangle) for specific Vec instantiations whose Itanium symbol
-// D TMP cannot express (e.g. const-qualified element types, nested templates):
-// extern(C++) nothrow @nogc {
-//     pragma(mangle, "_ZN4rust3VecIiE...") void vec_i32_push(ref Vec!int v, int x);
-// }
+// ---------------------------------------------------------------------------
+// cxx_d:: shared types
+// ---------------------------------------------------------------------------
 
-// Shared POD struct — must match src/ffi.rs Greeting layout exactly.
-// @mustuse: D compiler errors if a returned Greeting is discarded (parity with Rust #[must_use]).
-// NOTE: @mustuse applies to struct/union types only in LDC2 1.42 — no function-level equivalent.
-// Rust side uses #[must_use] on both the type and functions; D side covers the type only.
+/// Shared POD struct — must match Greeting in src/ffi.rs (String=24B + i32=4B + 4B pad = 32B).
+/// @mustuse: compiler errors if a returned Greeting is silently discarded.
 @mustuse
 extern(C++, "cxx_d") struct Greeting {
     String name;
     int count;
 }
-
-// String(24B, align 8) + i32(4B) + 4B padding = 32B total
 static assert(Greeting.sizeof == 32, "Greeting ABI layout mismatch with cxx bridge");
 
-// Opaque Rust handle — reference semantics (D class == C++ class == pointer-sized)
+/// Opaque Rust handle — reference-sized pointer; D must never construct one.
 extern(C++, "cxx_d") extern(C++, class) struct RustHandle {
     @disable this();
 }
 
-// Opaque D handle — value type (NOT extern(C++, class)) so DHandle* is a raw
-// pointer inside unique_ptr<DHandle>._ptr. Explicit destructor exported so
-// std::unique_ptr<DHandle> can call ~DHandle() without a linker error.
+/// Opaque D handle — value type so DHandle* is a raw pointer inside unique_ptr._ptr.
+/// Explicit destructor is exported so std::unique_ptr<DHandle> can call ~DHandle().
 extern(C++, "cxx_d") struct DHandle {
     @assumeUsed extern(C++) ~this() nothrow @nogc {}
 }
 
-// D-side implementations exposed to Rust.
-// @assumeUsed: prevents the Rust linker from DCE-eliminating these symbols
-// (parity: Rust #[used]; see ldc.attributes.assumeUsed).
+// ---------------------------------------------------------------------------
+// D-implemented bridge functions (called from Rust via cxx)
+// ---------------------------------------------------------------------------
+
 extern(C++, "cxx_d") nothrow {
 
-    @assumeUsed pragma(inline, false) int d_double(int x) @nogc {
-        return x * 2;
-    }
+    @assumeUsed pragma(inline, false)
+    int d_double(int x) @nogc { return x * 2; }
 
-    // @trusted: cast(void*→DHandle*) is safe here — __cpp_new_nothrow returns a
-    // freshly allocated, properly aligned block. @trusted suppresses the -preview=safer
-    // restriction on void* casts without disabling safety checks in callers.
-    // version(Windows): MSVC encodes the full return type (including default_delete)
-    // in the decorated name; pin via pragma(mangle) matching the LNK2019 symbol.
+    /// Allocates DHandle on the C++ heap so std::unique_ptr's default_delete
+    /// (operator delete) frees it correctly when UniquePtr<DHandle> is dropped.
+    /// @trusted: cast(void*→DHandle*) is safe — __cpp_new_nothrow returns aligned memory.
     version(Windows) {
         @assumeUsed pragma(inline, false)
         pragma(mangle, "?d_make_handle@cxx_d@@YA?AV?$unique_ptr@VDHandle@cxx_d@@U?$default_delete@VDHandle@cxx_d@@@std@@@std@@XZ")
@@ -133,11 +119,8 @@ extern(C++, "cxx_d") nothrow {
         }
     }
 
-    // D TMP mangles Fn!(String,Str) as Fn<String,J(Str)E> (pack), but cxx.rs
-    // expects Fn<F(String)(Str)E> (function-type template arg). Use pragma(mangle)
-    // to pin the exact symbol per ABI:
-    //   Linux/macOS: Itanium mangling
-    //   Windows:     MSVC-decorated name (return type is encoded, from LNK2019 error)
+    /// pragma(mangle): D TMP encodes Fn!(String,Str) as a pack (J..E) but cxx.rs
+    /// expects a function-type template arg (F..E). Pin the exact symbol per ABI.
     version(Windows) {
         @assumeUsed pragma(inline, false)
         pragma(mangle, "?d_run_callback@cxx_d@@YA?AVString@cxxbridge1@rust@@V?$Fn@$$A6A?AVString@cxxbridge1@rust@@VStr@23@@Z@34@VStr@34@@Z")
@@ -152,23 +135,17 @@ extern(C++, "cxx_d") nothrow {
         }
     }
 
-    // parity: cxx test_c_return bool
-    @assumeUsed pragma(inline, false) bool d_identity_bool(bool x) @nogc {
-        return x;
-    }
+    @assumeUsed pragma(inline, false)
+    bool d_identity_bool(bool x) @nogc { return x; }
 
-    // parity: cxx test_c_take f64
-    @assumeUsed pragma(inline, false) double d_add_f64(double a, double b) @nogc {
-        return a + b;
-    }
+    @assumeUsed pragma(inline, false)
+    double d_add_f64(double a, double b) @nogc { return a + b; }
 
-    // parity: cxx test_c_take &str — D reads rust::Str.len field
-    @assumeUsed pragma(inline, false) size_t d_str_len(Str s) @nogc {
-        return s.len;
-    }
+    /// Returns rust::Str.len without copying the string data.
+    @assumeUsed pragma(inline, false)
+    size_t d_str_len(Str s) @nogc { return s.len; }
 
-    // parity: cxx test_c_method_calls — D reads a shared struct field via const ref
-    @assumeUsed pragma(inline, false) int d_greeting_count(ref const(Greeting) g) @nogc {
-        return g.count;
-    }
+    /// Returns g.count via a C++ const-ref parameter (D: ref const(Greeting)).
+    @assumeUsed pragma(inline, false)
+    int d_greeting_count(ref const(Greeting) g) @nogc { return g.count; }
 }

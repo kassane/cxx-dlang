@@ -69,9 +69,21 @@ extern(C++, "cxx_d") nothrow {
 
 ```bash
 cargo run --example hello
+# Hello, D! (count=1)
+# d_double(21) = 42
+
 cargo run --example roundtrip
+# callback result: [hello]
+# d_str_len("roundtrip") = 9
+# d_make_handle is_null: false
+# rust handle: rust-handle
+
 cargo run --example structs
+# Greeting { name: "alice", count: 6 }
+# Greeting::sizeof == 32
+
 cargo test --tests
+# test result: ok. 10 passed
 ```
 
 Set `LDC2_PATH=/path/to/ldc2` if ldc2 is not on `PATH`.
