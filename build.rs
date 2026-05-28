@@ -101,15 +101,20 @@ fn main() {
 
     build.compile("cxx_d_dlib");
 
-    // Link druntime and phobos statically
-    let lib_dir = ldc2_root.join("lib");
+    // Link druntime and phobos statically.
+    // On Linux: libs live directly in <ldc2_root>/lib/
+    // On macOS: libs live in <ldc2_root>/lib/<arch>-apple-macosx*/ (versioned subdir)
+    let lib_dir = find_ldc2_lib_dir(&ldc2_root);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=static=druntime-ldc");
     println!("cargo:rustc-link-lib=static=phobos2-ldc");
     // C++ stdlib via link-cplusplus (portable: libstdc++ on Linux, libc++ on macOS)
     println!("cargo:rustc-link-lib=dylib=pthread");
-    println!("cargo:rustc-link-lib=dylib=m");
-    println!("cargo:rustc-link-lib=dylib=dl");
+    // m and dl are part of libSystem on macOS — only needed on Linux
+    if cfg!(target_os = "linux") {
+        println!("cargo:rustc-link-lib=dylib=m");
+        println!("cargo:rustc-link-lib=dylib=dl");
+    }
 
     // Rerun-if-changed
     println!("cargo:rerun-if-changed=src/ffi.rs");
@@ -124,6 +129,50 @@ fn main() {
 
     // cfg hygiene
     println!("cargo:rustc-check-cfg=cfg(cxx_d_test_modules)");
+}
+
+fn find_ldc2_lib_dir(ldc2_root: &Path) -> PathBuf {
+    // Probe order:
+    //   1. <root>/lib/libdruntime-ldc.a              — Linux standard layout
+    //   2. <root>/lib-arm64/ or lib-x86_64/          — macOS universal LDC2
+    //   3. <root>/lib/<subdir>/libdruntime-ldc.a     — macOS versioned subdir
+    //   4. any <root>/lib*/libdruntime-ldc.a         — generic fallback
+
+    let probe = |p: &PathBuf| p.join("libdruntime-ldc.a").exists();
+
+    let base = ldc2_root.join("lib");
+    if probe(&base) {
+        return base;
+    }
+
+    // macOS universal: lib-arm64 / lib-x86_64 at root level
+    let arch = if cfg!(target_arch = "aarch64") { "lib-arm64" } else { "lib-x86_64" };
+    let arch_dir = ldc2_root.join(arch);
+    if probe(&arch_dir) {
+        return arch_dir;
+    }
+
+    // Scan all lib* dirs directly under ldc2_root (covers lib-arm64, lib-x86_64)
+    // then all subdirs of lib/ (covers <arch>-apple-macosx* layouts)
+    let scan_dirs: Vec<PathBuf> = [ldc2_root, &base]
+        .iter()
+        .flat_map(|dir| std::fs::read_dir(dir).into_iter().flatten().flatten())
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_dir()
+                && p.file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("lib"))
+                    .unwrap_or(false)
+                && probe(p)
+        })
+        .collect();
+
+    if let Some(p) = scan_dirs.into_iter().max() {
+        return p;
+    }
+
+    base // let the linker error be the diagnostic
 }
 
 fn find_ldc2() -> PathBuf {
