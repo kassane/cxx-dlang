@@ -10,7 +10,7 @@ cxx = "1.0"
 cxx-build = "1.0"
 ```
 
-*Requires: LDC2 ≥ 1.40, Rust edition 2024 (rustc 1.85+), Linux x86_64*
+*Requires: LDC2 ≥ 1.40, Rust edition 2024 (rustc 1.85+)
 
 <br>
 
@@ -121,7 +121,7 @@ is not compatible with that.
 - LDC2 only (DMD and GDC not supported)
 - `rust::Fn<R(A)>` requires `pragma(mangle)` — D TMP encodes the template arg
   as a pack `J..E` but cxx uses a function type `F..E`
-- Async, D class polymorphism, and Windows are out of scope for v1
+- Async, D class polymorphism are out of scope
 
 <br>
 

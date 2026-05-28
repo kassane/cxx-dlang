@@ -102,18 +102,30 @@ fn main() {
     build.compile("cxx_d_dlib");
 
     // Link druntime and phobos statically.
-    // On Linux: libs live directly in <ldc2_root>/lib/
-    // On macOS: libs live in <ldc2_root>/lib/<arch>-apple-macosx*/ (versioned subdir)
+    //   Linux  : <root>/lib/libdruntime-ldc.a + libphobos2-ldc.a
+    //   macOS  : <root>/lib-arm64/ or lib-x86_64/ (universal), same .a names
+    //   Windows: <root>/lib64/druntime-ldc.lib + phobos2-ldc.lib  (MSVC, no lib prefix)
     let lib_dir = find_ldc2_lib_dir(&ldc2_root);
     println!("cargo:rustc-link-search=native={}", lib_dir.display());
     println!("cargo:rustc-link-lib=static=druntime-ldc");
     println!("cargo:rustc-link-lib=static=phobos2-ldc");
-    // C++ stdlib via link-cplusplus (portable: libstdc++ on Linux, libc++ on macOS)
-    println!("cargo:rustc-link-lib=dylib=pthread");
-    // m and dl are part of libSystem on macOS — only needed on Linux
-    if cfg!(target_os = "linux") {
-        println!("cargo:rustc-link-lib=dylib=m");
-        println!("cargo:rustc-link-lib=dylib=dl");
+
+    // Platform-specific system libs — use CARGO_CFG_TARGET_OS (correct for cross-builds).
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
+    match target_os.as_str() {
+        "linux" => {
+            println!("cargo:rustc-link-lib=dylib=pthread");
+            println!("cargo:rustc-link-lib=dylib=m");
+            println!("cargo:rustc-link-lib=dylib=dl");
+        }
+        "macos" => {
+            // pthread, m, dl are all part of libSystem on macOS
+        }
+        "windows" => {
+            // LDC2 Windows is MSVC-only; druntime pulls in Win32 APIs directly.
+            // link-cplusplus handles the C++ runtime (vcruntime / ucrt).
+        }
+        _ => {}
     }
 
     // Rerun-if-changed
@@ -133,27 +145,36 @@ fn main() {
 
 fn find_ldc2_lib_dir(ldc2_root: &Path) -> PathBuf {
     // Probe order:
-    //   1. <root>/lib/libdruntime-ldc.a              — Linux standard layout
-    //   2. <root>/lib-arm64/ or lib-x86_64/          — macOS universal LDC2
-    //   3. <root>/lib/<subdir>/libdruntime-ldc.a     — macOS versioned subdir
-    //   4. any <root>/lib*/libdruntime-ldc.a         — generic fallback
+    //   1. <root>/lib/libdruntime-ldc.a              — Linux standard
+    //   2. <root>/lib-arm64/ or lib-x86_64/          — macOS universal
+    //   3. <root>/lib64/                             — Windows multilib
+    //   4. <root>/lib/<subdir>/                      — macOS versioned subdir
+    //   5. any <root>/lib*/                          — generic scan
 
-    let probe = |p: &PathBuf| p.join("libdruntime-ldc.a").exists();
+    // Accept both .a (MinGW / Linux / macOS) and .lib (MSVC Windows)
+    let probe = |p: &PathBuf| {
+        p.join("libdruntime-ldc.a").exists() || p.join("druntime-ldc.lib").exists()
+    };
 
     let base = ldc2_root.join("lib");
     if probe(&base) {
         return base;
     }
 
-    // macOS universal: lib-arm64 / lib-x86_64 at root level
+    // macOS universal: lib-arm64 / lib-x86_64
     let arch = if cfg!(target_arch = "aarch64") { "lib-arm64" } else { "lib-x86_64" };
     let arch_dir = ldc2_root.join(arch);
     if probe(&arch_dir) {
         return arch_dir;
     }
 
-    // Scan all lib* dirs directly under ldc2_root (covers lib-arm64, lib-x86_64)
-    // then all subdirs of lib/ (covers <arch>-apple-macosx* layouts)
+    // Windows multilib: lib64
+    let lib64 = ldc2_root.join("lib64");
+    if probe(&lib64) {
+        return lib64;
+    }
+
+    // Scan all lib* dirs at root level and under lib/ (covers every known layout)
     let scan_dirs: Vec<PathBuf> = [ldc2_root, &base]
         .iter()
         .flat_map(|dir| std::fs::read_dir(dir).into_iter().flatten().flatten())
@@ -172,7 +193,7 @@ fn find_ldc2_lib_dir(ldc2_root: &Path) -> PathBuf {
         return p;
     }
 
-    base // let the linker error be the diagnostic
+    base
 }
 
 fn find_ldc2() -> PathBuf {

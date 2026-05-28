@@ -16,9 +16,12 @@ import core.stdcpp.new_ : __cpp_new_nothrow; // nothrow C++ operator new — com
 
 // Minimal unique_ptr — value type (NOT extern(C++, class)) so T* _ptr is a raw pointer.
 // core.stdcpp.memory is unavailable (pulls in core.stdcpp.tuple which is absent).
-// The empty extern(C++) destructor makes this non-trivially destructible, so LDC2
-// uses sret for return — matching Itanium ABI for non-trivially-destructible types.
-extern(C++, "std") struct unique_ptr(T) {
+// Two-parameter form matches std::unique_ptr<T, default_delete<T>>: required so that
+// MSVC-decorated return-type symbols include the full template instantiation.
+// The empty extern(C++) destructor makes this non-trivially destructible → sret on all ABIs.
+extern(C++, "std") struct default_delete(T) {}
+
+extern(C++, "std") struct unique_ptr(T, D = default_delete!T) {
     T* _ptr;
     extern(C++) ~this() nothrow @nogc {}
 }
@@ -119,11 +122,21 @@ extern(C++, "cxx_d") nothrow {
 
     // D TMP mangles Fn!(String,Str) as Fn<String,J(Str)E> (pack), but cxx.rs
     // expects Fn<F(String)(Str)E> (function-type template arg). Use pragma(mangle)
-    // to pin the exact Itanium symbol. Verified via nm comparison.
-    @assumeUsed pragma(inline, false)
-    pragma(mangle, "_ZN5cxx_d14d_run_callbackEN4rust10cxxbridge12FnIFNS1_6StringENS1_3StrEEEES4_")
-    String d_run_callback(StringFromStr cb, Str input) {
-        return cb.trampoline(input, cb.fn_);
+    // to pin the exact symbol per ABI:
+    //   Linux/macOS: Itanium mangling
+    //   Windows:     MSVC-decorated name (return type is encoded, from LNK2019 error)
+    version(Windows) {
+        @assumeUsed pragma(inline, false)
+        pragma(mangle, "?d_run_callback@cxx_d@@YA?AVString@cxxbridge1@rust@@V?$Fn@$$A6A?AVString@cxxbridge1@rust@@VStr@23@@Z@34@VStr@34@@Z")
+        String d_run_callback(StringFromStr cb, Str input) {
+            return cb.trampoline(input, cb.fn_);
+        }
+    } else {
+        @assumeUsed pragma(inline, false)
+        pragma(mangle, "_ZN5cxx_d14d_run_callbackEN4rust10cxxbridge12FnIFNS1_6StringENS1_3StrEEEES4_")
+        String d_run_callback(StringFromStr cb, Str input) {
+            return cb.trampoline(input, cb.fn_);
+        }
     }
 
     // parity: cxx test_c_return bool
