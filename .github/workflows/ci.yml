@@ -11,16 +11,20 @@ env:
 
 jobs:
   test:
-    name: test
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@main
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.85"
+          toolchain: "stable"
 
       - name: Install LDC2
         uses: dlang-community/setup-dlang@v2
@@ -28,7 +32,7 @@ jobs:
           compiler: ldc-latest
 
       - name: Cache cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@main
         with:
           path: |
             ~/.cargo/registry/index
