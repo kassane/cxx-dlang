@@ -1,0 +1,38 @@
+[package]
+name = "cxx-dlang"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "Bidirectional Rust ↔ D (LDC2) FFI via cxx.rs and the C++ ABI"
+keywords = ["ffi", "dlang", "ldc2", "cxx", "bindings"]
+categories = ["development-tools::ffi", "api-bindings", "external-ffi-bindings"]
+exclude = ["/target", "/.github", "/tools"]
+links = "cxx_d_dlib"
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+cxx = "1.0"
+
+[build-dependencies]
+cxx-build = "1.0"
+cc = "1.2"
+which = "7"
+link-cplusplus = "1"
+
+[dev-dependencies]
+trybuild = "1.0"
+
+[[example]]
+name = "hello"
+path = "examples/hello/main.rs"
+
+[[example]]
+name = "roundtrip"
+path = "examples/roundtrip/main.rs"
+
+[[example]]
+name = "structs"
+path = "examples/structs/main.rs"
