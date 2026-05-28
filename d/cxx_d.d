@@ -114,10 +114,23 @@ extern(C++, "cxx_d") nothrow {
     // @trusted: cast(void*→DHandle*) is safe here — __cpp_new_nothrow returns a
     // freshly allocated, properly aligned block. @trusted suppresses the -preview=safer
     // restriction on void* casts without disabling safety checks in callers.
-    @assumeUsed pragma(inline, false) unique_ptr!DHandle d_make_handle() @trusted {
-        unique_ptr!DHandle result;
-        result._ptr = cast(DHandle*)__cpp_new_nothrow(DHandle.sizeof);
-        return result;
+    // version(Windows): MSVC encodes the full return type (including default_delete)
+    // in the decorated name; pin via pragma(mangle) matching the LNK2019 symbol.
+    version(Windows) {
+        @assumeUsed pragma(inline, false)
+        pragma(mangle, "?d_make_handle@cxx_d@@YA?AV?$unique_ptr@VDHandle@cxx_d@@U?$default_delete@VDHandle@cxx_d@@@std@@@std@@XZ")
+        unique_ptr!DHandle d_make_handle() @trusted {
+            unique_ptr!DHandle result;
+            result._ptr = cast(DHandle*)__cpp_new_nothrow(DHandle.sizeof);
+            return result;
+        }
+    } else {
+        @assumeUsed pragma(inline, false)
+        unique_ptr!DHandle d_make_handle() @trusted {
+            unique_ptr!DHandle result;
+            result._ptr = cast(DHandle*)__cpp_new_nothrow(DHandle.sizeof);
+            return result;
+        }
     }
 
     // D TMP mangles Fn!(String,Str) as Fn<String,J(Str)E> (pack), but cxx.rs
