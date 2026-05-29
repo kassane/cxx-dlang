@@ -78,8 +78,17 @@ extern(C++, "demo") nothrow {
     @assumeUsed pragma(inline, false)
     int demo_divide_safe(int a, int b) @nogc { return a / b; }
 
-    // rust::Fn callback — pin Itanium symbol via pragma(mangle).
-    version (Windows) {} else {
+    // rust::Fn callback — D TMP encodes Fn!(String,Str) as a pack (J..E) but
+    // cxx uses a function-type template arg (F..E). Pin the symbol per ABI:
+    //   Itanium (Linux/macOS): _ZN4demo17demo_run_callback…
+    //   MSVC (Windows):        ?demo_run_callback@demo@@…
+    version (Windows) {
+        @assumeUsed pragma(inline, false)
+        pragma(mangle, "?demo_run_callback@demo@@YA?AVString@cxxbridge1@rust@@V?$Fn@$$A6A?AVString@cxxbridge1@rust@@VStr@23@@Z@34@VStr@34@@Z")
+        String demo_run_callback(Fn!(String, Str) cb, Str input) @trusted {
+            return cb.trampoline(input, cb.fn_);
+        }
+    } else {
         @assumeUsed pragma(inline, false)
         pragma(mangle, "_ZN4demo17demo_run_callbackEN4rust10cxxbridge12FnIFNS1_6StringENS1_3StrEEEES4_")
         String demo_run_callback(Fn!(String, Str) cb, Str input) @trusted {
