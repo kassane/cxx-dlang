@@ -1,6 +1,6 @@
 [package]
 name = "cxx-dlang"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
@@ -10,7 +10,7 @@ categories = ["development-tools::ffi", "api-bindings", "external-ffi-bindings"]
 repository = "https://github.com/kassane/cxx-dlang"
 homepage = "https://github.com/kassane/cxx-dlang"
 documentation = "https://docs.rs/cxx-dlang"
-exclude = ["/target", "/.github", "/tools"]
+exclude = ["/target", "/.github", "/tools", "/examples/demo/target"]
 links = "cxx_d_dlib"
 
 [package.metadata.docs.rs]
