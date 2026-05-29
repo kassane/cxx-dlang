@@ -1,14 +1,14 @@
 #![allow(unexpected_cfgs)]
-//! Bidirectional Rust ↔ D (LDC2) FFI via cxx.rs and the C++ ABI.
+//! Build-time helper crate that ships reusable D-side bindings for the cxx.rs
+//! `rust::*` types (`Str`, `String`, `Slice<T>`, `Vec<T>`, `Fn<R(A)>`) plus a
+//! minimal `std::unique_ptr<T>` value-type binding.
 //!
-//! Define the boundary once in [`ffi::bridge`] — cxx.rs generates C++ headers
-//! that LDC2 picks up via `extern(C++, "cxx_d")`, no manual `.di` files needed.
+//! Downstream crates declare their own `#[cxx::bridge]` and import the D
+//! module `cxx_d` from this crate's `d/cxx_d.d` to wire the C++ ABI both ways
+//! without re-writing the LDC2 toolchain glue.
 //!
-//! # Safety contract
-//! - Every Rust fn exposed to D is wrapped with `cxx::prevent_unwind`.
-//! - Every D fn callable from Rust is declared `nothrow`.
-//! - D handles returned as `UniquePtr<T>` are C++-heap-allocated (`__cpp_new_nothrow`).
+//! The companion `build.rs` discovers `ldc2`, compiles `d/cxx_d.d` with the
+//! curated `--preview=` safety flag set, and links druntime + phobos2
+//! statically into the host crate.
 
 pub use cxx;
-
-pub mod ffi;
