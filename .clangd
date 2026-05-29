@@ -1,7 +1,0 @@
-CompileFlags:
-  Add:
-    - -std=c++17
-    - -I./target/cxxbridge
-    - -I./include
-  Remove:
-    - -W*

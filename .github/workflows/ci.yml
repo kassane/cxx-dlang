@@ -19,17 +19,18 @@ jobs:
         with:
           toolchain: "stable"
           components: rustfmt
-      - name: cargo fmt --check
+      - name: cargo fmt --check (lib)
         run: cargo fmt --check
+      - name: cargo fmt --check (examples/demo)
+        run: cd examples/demo && cargo fmt --check
 
-  test:
-    name: test (${{ matrix.os }})
+  build:
+    name: build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-
     steps:
       - uses: actions/checkout@main
 
@@ -44,21 +45,31 @@ jobs:
         with:
           compiler: ldc-latest
 
-      - name: Cache cargo registry
+      - name: Cache cargo registry + target
         uses: actions/cache@main
         with:
           path: |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: ${{ runner.os }}-cargo-
+            target
+            examples/demo/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-${{ hashFiles('**/*.rs', '**/*.d') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}-
+            ${{ runner.os }}-cargo-
 
-      - name: cargo clippy
-        run: cargo clippy -- -D warnings
+      - name: cargo clippy (lib)
+        run: cargo clippy --all-targets -- -D warnings
 
-      - name: cargo test
+      - name: cargo test (lib)
         run: cargo test --tests
 
-      - name: cargo build examples
-        run: cargo build --examples
+      - name: cargo build (lib)
+        run: cargo build
+
+      - name: cargo clippy (examples/demo)
+        run: cd examples/demo && cargo clippy --all-targets -- -D warnings
+
+      - name: cargo run (examples/demo)
+        run: cd examples/demo && cargo run --bin demo
