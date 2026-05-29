@@ -23,6 +23,17 @@ const LDC2_SAFETY_FLAGS: &[&str] = &[
 
 fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
+
+    // FIXME: docs.rs sandbox has no `ldc2` installed and rustdoc does not link the
+    // crate anyway, so skip the native D pipeline entirely. Emit an empty
+    // archive so the `links = "cxx_d_dlib"` contract is still honoured.
+    if env::var("DOCS_RS").is_ok() {
+        let stub = out_dir.join("cxx_d_dlib_docsrs_stub.c");
+        std::fs::write(&stub, "void __cxx_d_dlib_docsrs_stub(void) {}\n").unwrap();
+        cc::Build::new().file(&stub).compile("cxx_d_dlib");
+        return;
+    }
+
     let d_objs_dir = out_dir.join("d_objs");
     std::fs::create_dir_all(&d_objs_dir).expect("create d_objs dir");
 
