@@ -1,4 +1,4 @@
-# cxx-dlang — Rust ↔ D bindings + LDC2 build glue for cxx.rs
+# cxx-dlang — Rust ↔ D bindings
 
 [![CI](https://github.com/kassane/cxx-dlang/actions/workflows/ci.yml/badge.svg)](https://github.com/kassane/cxx-dlang/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/cxx-dlang.svg)](https://crates.io/crates/cxx-dlang)
@@ -22,7 +22,7 @@ cxx-dlang = "0.2"
 cxx-build = "1.0"
 ```
 
-*Requires LDC2 ≥ 1.40, Rust edition 2024 (rustc 1.85+). CI matrix: Linux / macOS / Windows MSVC.*
+*Requires LDC2 ≥ 1.40, Rust edition 2024 (rustc 1.85+).
 
 Set `$DC` (D-toolchain convention, e.g. `DC=ldc2`) or `$LDC2_PATH` if `ldc2` is
 not on `$PATH`.
@@ -49,20 +49,9 @@ not on `$PATH`.
 | `CxxString` (alias for `basic_string!char`) | `std::string` | via `core.stdcpp.string` |
 | `CxxArray(T, N)` (alias for `array!(T, N)`) | `std::array<T, N>` | via `core.stdcpp.array` |
 
-Per-runtime adaptations (driven by D's predefined `version (CppRuntime_*)`):
 
-- `CppRuntime_GNU` (Linux libstdc++) → `pragma(lib, "stdc++")`; smart-pointer methods *omitted*; use inline-C++ trampolines in the consumer's bridge header.
-- `CppRuntime_LLVM` (macOS / libc++) → `pragma(lib, "c++")`; smart-pointer methods *direct*.
-- `CppRuntime_Microsoft` (Windows MSVC) → linked automatically; smart-pointer methods *direct*.
 
-(Validated empirically via `zig c++ -c -target {x86_64-linux-gnu, aarch64-macos-none, x86_64-windows-msvc}` + `llvm-nm` — see CLAUDE.md for the methodology.)
 
-**Build pipeline** (`build.rs`):
-
-- Locates `ldc2` via `$DC` → `$LDC2_PATH` → walks `$PATH` → `~/.dlang/ldc2-*/bin/ldc2`.
-- Compiles every `.d` file under `d/` with the curated safety-preview list.
-- Probes the LDC2 lib dir across Linux (`lib/`), macOS universal (`lib-arm64/`, `lib-x86_64/`) and Windows MSVC (`lib64/`).
-- Bundles the D objects into `libcxx_d_dlib.a` (named after the crate's `links =` key) and links druntime + phobos2 statically.
 
 LDC2 `--preview=` safety flags applied to every compilation unit:
 `safer`, `dip1000`, `nosharedaccess`, `fixImmutableConv`, `systemVariables`.
@@ -101,49 +90,6 @@ The consumer's `build.rs` runs `cxx_build::bridge("src/ffi.rs")`, adds its own
 own build does), and links everything together. `cxx-dlang` contributes the
 `rust::*` D bindings and the druntime/phobos linkage.
 
-<br>
-
-## Testing
-
-```bash
-cargo test --tests
-# test result: ok. 99 passed; 0 failed
-```
-
-`tests/integration.rs` writes one tiny fixture `.d` file per `#[test]` and
-compiles it under the safety previews:
-
-- every binding × `{const, mut}` × all D integer/float widths (Slice, Vec)
-- ABI invariants via D `static assert` (`Str.sizeof == 16`, `String.sizeof == 24`,
-  `Slice!T.sizeof == 16`, `Vec(T)` methods present, `Fn(R,A).sizeof == 16`, …)
-- structural traits: field types, tuple lengths, disabled ctors / postblits
-- `version (CppRuntime_*)` conditional smart-ptr method probes
-- a "full surface" fixture that uses every binding in a single `extern(C++)` block
-
-End-to-end validation against a real consumer lives in
-[`examples/demo/`](examples/demo) — a self-contained sub-package with its
-own `Cargo.toml`, `build.rs`, `#[cxx::bridge]`, and `d/demo.d` that
-exercises every C++ stdlib type category we ship (UniquePtr, SharedPtr
-refcount, CxxVector, CxxString, std::array, `Result<T>` throw, callbacks,
-shared structs/enums). CI runs it on every push:
-
-```bash
-cd examples/demo && cargo run --bin demo
-# === cxx-dlang full-parity demo ===
-#   demo_str_len + demo_sum_u8       ok
-#   demo_fill + demo_double_i32      ok
-#   shared enum + shared struct      ok
-#   String roundtrip + Vec<i32> sum  ok
-#   UniquePtr<DPayload>              ok
-#   rust::Fn callback                ok
-#   Result<T> via C++ throw          ok
-#   SharedPtr<T> refcount            ok
-#   CxxVector<i32> sum               ok
-#   CxxString len                    ok
-#   std::array<int,4> sum            ok
-#   RustCounter (extern Rust)        ok
-# ✔ every binding category exercised end-to-end.
-```
 
 <br>
 
